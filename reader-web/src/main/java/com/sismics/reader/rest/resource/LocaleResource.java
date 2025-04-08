@@ -19,7 +19,7 @@ import java.util.List;
  * @author jtremeaux
  */
 @Path("/locale")
-public class LocaleResource extends BaseResource {
+public class LocaleResource {
     /**
      * Returns the list of all locales.
      * 

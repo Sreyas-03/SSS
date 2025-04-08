@@ -9,7 +9,7 @@ import com.sismics.reader.core.dao.jpa.dto.UserArticleDto;
 import com.sismics.reader.core.event.SubscriptionImportedEvent;
 import com.sismics.reader.core.model.context.AppContext;
 import com.sismics.reader.core.model.jpa.*;
-import com.sismics.reader.core.service.FeedService;
+import com.sismics.reader.core.service.*;
 import com.sismics.reader.core.util.DirectoryUtil;
 import com.sismics.reader.core.util.EntityManagerUtil;
 import com.sismics.reader.core.util.jpa.PaginatedList;
@@ -21,9 +21,13 @@ import com.sismics.rest.exception.ForbiddenClientException;
 import com.sismics.rest.exception.ServerException;
 import com.sismics.rest.util.JsonUtil;
 import com.sismics.rest.util.ValidationUtil;
+import com.sismics.security.IPrincipal;
+import com.sismics.security.UserPrincipal;
 import com.sismics.util.MessageUtil;
+import com.sismics.util.filter.SecurityFilter;
 import com.sun.jersey.multipart.FormDataBodyPart;
 import com.sun.jersey.multipart.FormDataParam;
+
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.codehaus.jettison.json.JSONArray;
@@ -34,7 +38,9 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
 import javax.persistence.NoResultException;
+import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.*;
+import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.ResponseBuilder;
@@ -43,15 +49,18 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.transform.dom.DOMSource;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.security.Principal;
 import java.text.MessageFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Feed subscriptions REST resources.
@@ -59,12 +68,56 @@ import java.util.List;
  * @author jtremeaux
  */
 @Path("/subscription")
-public class SubscriptionResource extends BaseResource {
+public class SubscriptionResource {
     /**
-     * Returns the categories and subscriptions of the current user.
+     * Injects the HTTP request.
+     */
+    @Context
+    protected HttpServletRequest request;
+    
+    /**
+     * Application key.
+     */
+    @QueryParam("app_key")
+    protected String appKey;
+    
+    /**
+     * Principal of the authenticated user.
+     */
+    protected IPrincipal principal;
+
+    /**
+     * Checks if the user has a base function.
      * 
-     * @param unread Returns only subscriptions having unread articles
-     * @return Response
+     * @param baseFunction Base function to check
+     * @return True if the user has the base function
+     */
+    protected boolean hasBaseFunction(BaseFunction baseFunction) throws JSONException {
+        if (principal == null || !(principal instanceof UserPrincipal)) {
+            return false;
+        }
+        Set<String> baseFunctionSet = ((UserPrincipal) principal).getBaseFunctionSet();
+        return baseFunctionSet != null && baseFunctionSet.contains(baseFunction.name());
+    }
+    
+    /**
+     * This method is used to check if the user is authenticated.
+     * 
+     * @return True if the user is authenticated and not anonymous
+     */
+    private boolean authenticate() {
+        Principal principal = (Principal) request.getAttribute(SecurityFilter.PRINCIPAL_ATTRIBUTE);
+        if (principal != null && principal instanceof IPrincipal) {
+            this.principal = (IPrincipal) principal;
+            return !this.principal.isAnonymous();
+        } else {
+            return false;
+        }
+    }
+    
+    /**
+     * 
+     * 
      */
     @GET
     @Produces(MediaType.APPLICATION_JSON)
@@ -74,87 +127,118 @@ public class SubscriptionResource extends BaseResource {
             throw new ForbiddenClientException();
         }
         
-        // Search this user's subscriptions
-        FeedSubscriptionCriteria feedSubscriptionCriteria = new FeedSubscriptionCriteria()
-                .setUserId(principal.getId())
-                .setUnread(unread);
-        
-        FeedSubscriptionDao feedSubscriptionDao = new FeedSubscriptionDao();
-        List<FeedSubscriptionDto> feedSubscriptionList = feedSubscriptionDao.findByCriteria(feedSubscriptionCriteria);
-        
         // Get the root category
         CategoryDao categoryDao = new CategoryDao();
         Category rootCategory = categoryDao.getRootCategory(principal.getId());
-        JSONObject rootCategoryJson = new JSONObject();
-        rootCategoryJson.put("id", rootCategory.getId());
-        
-        // Construct the response
-        List<JSONObject> rootCategories = new ArrayList<JSONObject>();
-        rootCategories.add(rootCategoryJson);
-        String oldCategoryId = null;
-        JSONObject categoryJson = rootCategoryJson;
-        int totalUnreadCount = 0;
-        int categoryUnreadCount = 0;
-        for (FeedSubscriptionDto feedSubscription : feedSubscriptionList) {
-            String categoryId = feedSubscription.getCategoryId();
-            String categoryParentId = feedSubscription.getCategoryParentId();
-            
-            if (!categoryId.equals(oldCategoryId)) {
-                if (categoryParentId != null) {
-                    if (categoryJson != rootCategoryJson) {
-                        categoryJson.put("unread_count", categoryUnreadCount);
-                        JsonUtil.append(rootCategoryJson, "categories", categoryJson);
-                    }
-                    categoryJson = new JSONObject();
-                    categoryJson.put("id", categoryId);
-                    categoryJson.put("name", feedSubscription.getCategoryName());
-                    categoryJson.put("folded", feedSubscription.isCategoryFolded());
-                    categoryJson.put("subscriptions", new JSONArray());
-                    categoryUnreadCount = 0;
-                }
-            }
-            JSONObject subscription = new JSONObject();
-            subscription.put("id", feedSubscription.getId());
-            subscription.put("title", feedSubscription.getFeedSubscriptionTitle());
-            subscription.put("url", feedSubscription.getFeedRssUrl());
-            subscription.put("unread_count", feedSubscription.getUnreadUserArticleCount());
-            subscription.put("sync_fail_count", feedSubscription.getSynchronizationFailCount());
-            JsonUtil.append(categoryJson, "subscriptions", subscription);
-            
-            oldCategoryId = categoryId;
-            categoryUnreadCount += feedSubscription.getUnreadUserArticleCount();
-            totalUnreadCount += feedSubscription.getUnreadUserArticleCount();
-        }
-        if (categoryJson != rootCategoryJson) {
-            categoryJson.put("unread_count", categoryUnreadCount);
-            JsonUtil.append(rootCategoryJson, "categories", categoryJson);
-        }
-        
-        // Add the categories without subscriptions
-        if (!unread) {
-            List<Category> allCategoryList = categoryDao.findSubCategory(rootCategory.getId(), principal.getId());
-            JSONArray categoryArrayJson = rootCategoryJson.optJSONArray("categories");
-            List<JSONObject> fullCategoryListJson = new ArrayList<JSONObject>();
-            int i = 0;
-            for (Category category : allCategoryList) {
-                if (categoryArrayJson != null && i < categoryArrayJson.length() && categoryArrayJson.getJSONObject(i).getString("id").equals(category.getId())) {
-                    categoryJson = categoryArrayJson.getJSONObject(i++);
-                } else {
-                    categoryJson = new JSONObject();
-                    categoryJson.put("id", category.getId());
-                    categoryJson.put("name", category.getName());
-                    categoryJson.put("folded", category.isFolded());
-                    categoryJson.put("unread_count", 0);
-                }
-                fullCategoryListJson.add(categoryJson);
-            }
-            rootCategoryJson.put("categories", fullCategoryListJson);
-        }
-        
-        JSONObject response = new JSONObject();
-        response.put("categories", rootCategories);
-        response.put("unread_count", totalUnreadCount);
+
+        // Build the JSON response using the recursive function
+        JSONObject response = buildCategoryJsonRecursive(rootCategory, unread, 0);
+
         return Response.ok().entity(response).build();
+    }
+
+    /**
+     * Builds the category JSON object recursively, including subcategories and subscriptions.
+     *
+     * @param category The category to build the JSON for
+     * @param unread   Whether to include only unread items
+     * @param level    Current nesting level of the category
+     * @return JSONObject for the category, including nested items
+     * @throws JSONException if JSON object creation fails
+     */
+    private JSONObject buildCategoryJsonRecursive(Category category, boolean unread, int level) throws JSONException {
+        JSONObject categoryJson = createCategoryJsonObject(category, level);
+        JSONArray subscriptionsJson = new JSONArray();
+        JSONArray categoriesJson = new JSONArray();
+        int categoryUnreadCount = 0;
+        int categoryTotalCount = 0;
+        int maxSubcategoryDepth = 0;
+
+        FeedSubscriptionDao feedSubscriptionDao = new FeedSubscriptionDao();
+
+        FeedSubscriptionCriteria feedSubscriptionCriteria = new FeedSubscriptionCriteria();
+        feedSubscriptionCriteria.setCategoryId(category.getId()); // Filter by category ID
+        feedSubscriptionCriteria.setUserId(principal.getId()); // Ensure user context
+        List<FeedSubscriptionDto> feedSubscriptionList = feedSubscriptionDao.findByCriteria(feedSubscriptionCriteria);
+
+        for (FeedSubscriptionDto feedSubscriptionDto : feedSubscriptionList) {
+            if (unread && feedSubscriptionDto.getUnreadUserArticleCount() <= 0) {
+                continue; // Skip if unread-only and no unread items
+            }
+            JSONObject subscriptionJson = createSubscriptionJsonObject(feedSubscriptionDto);
+            if (subscriptionJson != null) { // Check for null subscriptionJson
+                subscriptionsJson.put(subscriptionJson);
+                categoryUnreadCount += subscriptionJson.optInt("unread_count", 0); // Use optInt with default 0
+                categoryTotalCount += subscriptionJson.optInt("total_count", 0);   // Use optInt with default 0
+            }
+        }
+        // Recursively process subcategories
+        CategoryDao categoryDao = new CategoryDao();
+        List<Category> subCategoryList = categoryDao.findSubCategory(category.getId(), principal.getId());
+        for (Category subCategory : subCategoryList) {
+            JSONObject subCategoryJson = buildCategoryJsonRecursive(subCategory, unread, level + 1);
+            if (subCategoryJson != null) { // Check for null subCategoryJson
+                categoriesJson.put(subCategoryJson);
+                categoryUnreadCount += subCategoryJson.optInt("unread_count", 0); // Use optInt with default 0
+                categoryTotalCount += subCategoryJson.optInt("total_count", 0);     // Use optInt with default 0
+                maxSubcategoryDepth = Math.max(maxSubcategoryDepth, subCategoryJson.optInt("max_subcategory_depth", 0)); // Use optInt with default 0
+            }
+        }
+
+        categoryJson.put("subscriptions", subscriptionsJson);
+        categoryJson.put("categories", categoriesJson);
+        categoryJson.put("unread_count", categoryUnreadCount);
+        categoryJson.put("total_count", categoryTotalCount);
+        categoryJson.put("max_subcategory_depth", maxSubcategoryDepth + 1);
+
+        return categoryJson;
+    }
+
+    private JSONObject createCategoryJsonObject(Category category, int level) throws JSONException {
+        JSONObject categoryJson = new JSONObject();
+        categoryJson.put("id", category.getId());
+        categoryJson.put("name", category.getName());
+        categoryJson.put("nesting_level", level);
+        categoryJson.put("max_subcategory_depth", 0); // Default max depth to 0, will be updated in recursion
+        categoryJson.put("folded", category.isFolded());
+        categoryJson.put("subscriptions", new JSONArray());
+        categoryJson.put("categories", new JSONArray());
+        categoryJson.put("unread_count", 0);
+        categoryJson.put("total_count", 0);
+        return categoryJson;
+    }
+
+    /**
+     * Creates a JSON object for a feed subscription.
+     * @param feedSubscription FeedSubscription providing subscription data
+     * @return JSONObject for the subscription
+     * @throws JSONException if JSON object creation fails
+     */
+    private JSONObject createSubscriptionJsonObject(FeedSubscriptionDto feedSubscriptionDto) throws JSONException {
+        if (feedSubscriptionDto == null) {
+            System.err.println("Error: createSubscriptionJsonObject called with null feedSubscription.");
+            return null; // Return null to indicate an error
+        }
+    
+        JSONObject subscription = new JSONObject();
+        subscription.put("id", feedSubscriptionDto.getId());
+        subscription.put("title", feedSubscriptionDto.getFeedSubscriptionTitle());
+        subscription.put("url", feedSubscriptionDto.getFeedRssUrl());
+        subscription.put("unread_count", feedSubscriptionDto.getUnreadUserArticleCount());
+        subscription.put("sync_fail_count", feedSubscriptionDto.getSynchronizationFailCount());
+
+        // Create count criteria
+        UserArticleCriteria countCriteria = new UserArticleCriteria()
+        .setUserId(principal.getId())
+        .setFeedId(feedSubscriptionDto.getFeedId())
+        .setSubscribed(true)
+        .setVisible(true);
+
+        // Get total count directly using DAO
+        int totalArticleCount = new UserArticleDao().findByCriteria(countCriteria).size();
+        subscription.put("total_count", totalArticleCount);
+    
+        return subscription;
     }
     
     /**
@@ -305,7 +389,7 @@ public class SubscriptionResource extends BaseResource {
         
         // Validate input data
         ValidationUtil.validateRequired(url, "url");
-        url = ValidationUtil.validateHttpUrl(url, "url");
+        // url = ValidationUtil.validateHttpUrl(url, "url");
         title = ValidationUtil.validateLength(title, "title", null, 100, true);
         
         // Check if the user is already subscribed to this feed
@@ -321,11 +405,30 @@ public class SubscriptionResource extends BaseResource {
         // Get feed and articles
         Feed feed;
         final FeedService feedService = AppContext.getInstance().getFeedService();
+        ArticleFeedService articleFeedService = new ArticleFeedService();
+        FeedDao feedDao = new FeedDao();
         try {
             feed = feedService.synchronize(url);
         } catch (Exception e) {
-            throw new ServerException("FeedError", MessageFormat.format("Error retrieving feed at {0}", url), e);
-            // TODO NoFeedFound if it isn't a feed or a page referencing a feed
+            try {
+                System.out.println("hi");
+                System.out.println("hi");
+                System.out.println("hi");
+                System.out.println("hi");
+                System.out.println(url);
+                System.out.println(url);
+                System.out.println(url);
+                System.out.println(url);
+                System.out.println(url);
+                feed = feedDao.getByRssUrl(url);
+                System.out.println("h2i");
+                System.out.println("h2i");
+                System.out.println("h2i");
+                System.out.println("h2i");
+            } catch (Exception e1) {
+                throw new ServerException("FeedError", MessageFormat.format("Error retrieving feed at {0}", url), e);
+                // TODO NoFeedFound if it isn't a feed or a page referencing a feed
+            }
         }
         
         // Check again that we are not subscribed, in case the page URL was replaced by the feed URL
@@ -356,7 +459,7 @@ public class SubscriptionResource extends BaseResource {
         
         // Create the initial article subscriptions for this user
         EntityManagerUtil.flush();
-        feedService.createInitialUserArticle(principal.getId(), feedSubscription);
+        articleFeedService.createInitialUserArticle(principal.getId(), feedSubscription);
 
         JSONObject response = new JSONObject();
         response.put("id", feedSubscriptionId);
@@ -431,31 +534,60 @@ public class SubscriptionResource extends BaseResource {
     @GET
     @Path("{id: [a-z0-9\\-]+}/favicon")
     @Produces(MediaType.APPLICATION_OCTET_STREAM)
-    public Response favicon(
-            @PathParam("id") String id) throws JSONException {
-        if (!authenticate()) {
-            throw new ForbiddenClientException();
+    public Response favicon(@PathParam("id") String id) {
+        try {
+            if (!authenticate()) {
+                throw new ForbiddenClientException();
+            }
+    
+            // Get the subscription
+            FeedSubscriptionDao feedSubscriptionDao = new FeedSubscriptionDao();
+            final FeedSubscription feedSubscription = feedSubscriptionDao.getFeedSubscription(id, principal.getId());
+            if (feedSubscription == null) {
+                throw new ClientException("SubscriptionNotFound", 
+                    MessageFormat.format("Subscription not found: {0}", id));
+            }
+    
+            // Get the favicon
+            File faviconDirectory = DirectoryUtil.getFaviconDirectory();
+            File[] matchingFiles = faviconDirectory.listFiles((dir, name) -> name.startsWith(feedSubscription.getFeedId()));
+    
+            File faviconFile;
+            if (matchingFiles != null && matchingFiles.length > 0) {
+                faviconFile = matchingFiles[0];
+            } else {
+                faviconFile = new File(getClass().getResource("/image/subscription.png").toURI());
+            }
+    
+            FileInputStream fis = new FileInputStream(faviconFile);
+            StreamingOutput stream = os -> {
+                try {
+                    ByteStreams.copy(fis, os);
+                } finally {
+                    fis.close();
+                }
+            };
+    
+            return Response.ok(stream)
+                    .header("Expires", new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z")
+                            .format(new Date().getTime() + 3600000 * 24 * 7))
+                    .header("Content-Disposition", 
+                            MessageFormat.format("attachment; filename=\"{0}\"", faviconFile.getName()))
+                    .build();
+        } catch (ForbiddenClientException e) {
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("Access Denied: " + e.getMessage())
+                    .build();
+        } catch (ClientException e) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("Error: " + e.getMessage())
+                    .build();
+        } catch (Exception e) {
+            e.printStackTrace(); // Log error details
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity("An unexpected error occurred: " + e.getMessage())
+                    .build();
         }
-        
-        // Get the subscription
-        FeedSubscriptionDao feedSubscriptionDao = new FeedSubscriptionDao();
-        final FeedSubscription feedSubscription = feedSubscriptionDao.getFeedSubscription(id, principal.getId());
-        if (feedSubscription == null) {
-            throw new ClientException("SubscriptionNotFound", MessageFormat.format("Subscription not found: {0}", id));
-        }
-        
-        // Get the favicon
-        File faviconDirectory = DirectoryUtil.getFaviconDirectory();
-        File[] matchingFiles = faviconDirectory.listFiles((dir, name) -> name.startsWith(feedSubscription.getFeedId()));
-        final File faviconFile = matchingFiles.length > 0 ? 
-                matchingFiles[0] :
-                new File(getClass().getResource("/image/subscription.png").getFile());
-
-        StreamingOutput stream = os -> ByteStreams.copy(new FileInputStream(faviconFile), os);
-        return Response.ok(stream)
-                .header("Expires", new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss Z").format(new Date().getTime() + 3600000 * 24 * 7))
-                .header("Content-Disposition", MessageFormat.format("attachment; filename=\"{0}\"", faviconFile.getName()))
-                .build();
     }
     
     /**
@@ -542,7 +674,11 @@ public class SubscriptionResource extends BaseResource {
         if (!authenticate()) {
             throw new ForbiddenClientException();
         }
-        checkBaseFunction(BaseFunction.IMPORT);
+        // checkBaseFunction(BaseFunction.IMPORT);
+
+        if (!hasBaseFunction(BaseFunction.IMPORT)) {
+            throw new ForbiddenClientException();
+        }
         
         // Validate input data
         ValidationUtil.validateRequired(fileBodyPart, "file");
@@ -556,7 +692,7 @@ public class SubscriptionResource extends BaseResource {
             // Copy the incoming stream content into a temporary file
             importFile = File.createTempFile("reader_opml_import", null);
             IOUtils.copy(in, new FileOutputStream(importFile));
-            
+             
             SubscriptionImportedEvent event = new SubscriptionImportedEvent();
             event.setUser(user);
             event.setImportFile(importFile);

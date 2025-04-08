@@ -16,29 +16,82 @@ r.article.init = function() {
     }
   });
   
-  // Delegate on star buttons
-  r.feed.cache.container.on('click', '.feed-item .feed-item-star', function(e) {
-    var item = $(this).closest('.feed-item');
-    var article = item.data('article');
-    article.is_starred = !article.is_starred;
-    
-    // Update local star and item state
-    if (article.is_starred) {
+// Delegate on star buttons
+r.feed.cache.container.on('click', '.feed-item .feed-item-star', function(e) {
+  var item = $(this).closest('.feed-item');
+  var article = item.data('article');
+  // IMPORTANT: Store the original state *before* toggling
+  var wasStarred = article.is_starred;
+  article.is_starred = !article.is_starred;
+
+  // Update local star and item state
+  if (article.is_starred) {
       item.find('.feed-item-star').addClass('starred');
       item.addClass('starred');
-    } else {
+  } else {
       item.find('.feed-item-star').removeClass('starred');
       item.removeClass('starred');
-    }
-    
-    // Calling API
-    r.util.ajax({
-      url: r.util.url.starred_star.replace('{id}', article.id),
-      type: article.is_starred ? 'PUT' : 'DELETE'
-    });
-    
-    e.stopPropagation();
+  }
+
+  // Prepare the data to send to the trending backend.
+  const articleData = {
+      id: article.title, // Make sure article.id is correctly set
+      articleObject: article,
+  };
+
+  // Choose the correct endpoint based on the *original* starred state
+  let apiUrl = wasStarred ? '../api/trending/destar' : '../api/trending/star';
+
+  // --- First API Call (Trending) ---
+  fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+          'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(articleData)
+  })
+  .then(response => {
+      if (!response.ok) {
+          // IMPORTANT: DO NOT Revert UI changes here, only log/alert errors
+          throw new Error(`Trending API request failed with status ${response.status}`);
+      }
+      return response.json();
+  })
+  .then(data => {
+      console.log('Trending API Success:', data);
+  })
+  .catch(error => {
+      console.error('Trending API Error:', error);
+      // Display an error, but DON'T revert the UI.
+      alert('An error occurred while updating the trending count.');
   });
+
+
+  // --- Second API Call (Original) ---
+  r.util.ajax({
+      url: r.util.url.starred_star.replace('{id}', article.id),
+      type: article.is_starred ? 'PUT' : 'DELETE', // Use the *current* is_starred
+      success: function() {
+          console.log('Original Star API Success');
+      },
+      error: function(xhr, textStatus, errorThrown) {
+          console.error('Original Star API Error:', textStatus, errorThrown);
+           // Revert the UI if the *original* API call fails
+          article.is_starred = wasStarred;
+          if (wasStarred) {
+              item.find('.feed-item-star').addClass('starred');
+              item.addClass('starred');
+          } else {
+              item.find('.feed-item-star').removeClass('starred');
+              item.removeClass('starred');
+          }
+          alert("Failed to update starred status.");
+
+      }
+  });
+
+  e.stopPropagation();
+});
   
   // Delegate on article collapsed header click
   r.feed.cache.container.on('click', '.feed-item .collapsed .container', function() {
@@ -261,6 +314,23 @@ r.article.build = function(article, classes) {
   } else {
     item.find('.feed-item-share').remove();
   }
+
+  // --- COMPARE CHECKBOX HANDLING ---
+  const compareCheckbox = item.find('.feed-item-compare input[name="compare"]');
+    if (compareCheckbox.length) { //Ensure checkbox is there.
+      // Use the 'article.url' for checking if it's in comparedArticles.
+        const articleUrl = r.ArticleCompare.extractUrlFromElement(item[0]); // Use item[0] to get the DOM element
+        if (articleUrl && r.ArticleCompare.comparedArticles.some(a => a.url === articleUrl)) {
+            compareCheckbox.prop('checked', true);
+        }
+    }
+    // //add event listener to do compare and reset button.
+    // item.find('#doCompareButton').on('click', function() {
+    //     r.ArticleCompare.handleCompareClick();
+    // });
+    //   item.find('#resetSelectionButton').on('click', function() {
+    //     r.ArticleCompare.resetComparison();
+    // });
   
   return item;
 };

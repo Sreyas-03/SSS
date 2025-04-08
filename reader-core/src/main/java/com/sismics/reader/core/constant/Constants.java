@@ -75,4 +75,9 @@ public class Constants {
      * Import Job : starred article failure.
      */
     public static final String JOB_EVENT_STARRED_ARTICLE_IMPORT_FAILURE = "import.starred_article_import_failure";
+
+    /**
+     * News Api Key configuration.
+     */
+    public final String CONFIG_NEWS_API_KEY = "69e7f65283bc48ac91e7e0fb2e87d69c";
 }

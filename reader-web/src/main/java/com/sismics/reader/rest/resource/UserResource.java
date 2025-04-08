@@ -9,22 +9,24 @@ import com.sismics.reader.core.dao.jpa.dto.JobDto;
 import com.sismics.reader.core.dao.jpa.dto.JobEventDto;
 import com.sismics.reader.core.dao.jpa.dto.UserDto;
 import com.sismics.reader.core.event.PasswordChangedEvent;
-import com.sismics.reader.core.event.UserCreatedEvent;
 import com.sismics.reader.core.model.context.AppContext;
 import com.sismics.reader.core.model.jpa.AuthenticationToken;
-import com.sismics.reader.core.model.jpa.Category;
 import com.sismics.reader.core.model.jpa.User;
 import com.sismics.reader.core.util.jpa.PaginatedList;
 import com.sismics.reader.core.util.jpa.PaginatedLists;
 import com.sismics.reader.core.util.jpa.SortCriteria;
 import com.sismics.reader.rest.constant.BaseFunction;
+import com.sismics.reader.rest.userRegistration.Application;
+import com.sismics.reader.rest.userRegistration.factory.*;
 import com.sismics.rest.exception.ClientException;
 import com.sismics.rest.exception.ForbiddenClientException;
 import com.sismics.rest.exception.ServerException;
 import com.sismics.rest.util.ValidationUtil;
+import com.sismics.security.IPrincipal;
 import com.sismics.security.UserPrincipal;
 import com.sismics.util.EnvironmentUtil;
 import com.sismics.util.LocaleUtil;
+import com.sismics.util.filter.SecurityFilter;
 import com.sismics.util.filter.TokenBasedSecurityFilter;
 import org.apache.commons.lang.StringUtils;
 import org.codehaus.jettison.json.JSONArray;
@@ -32,12 +34,15 @@ import org.codehaus.jettison.json.JSONException;
 import org.codehaus.jettison.json.JSONObject;
 
 import javax.servlet.http.Cookie;
+import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.*;
+import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.NewCookie;
 import javax.ws.rs.core.Response;
+
+import java.security.Principal;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Set;
 
@@ -47,84 +52,114 @@ import java.util.Set;
  * @author jtremeaux
  */
 @Path("/user")
-public class UserResource extends BaseResource {
+public class UserResource {
     /**
-     * Creates a new user.
+     * Injects the HTTP request.
+     */
+    @Context
+    protected HttpServletRequest request;
+    
+    /**
+     * Application key.
+     */
+    @QueryParam("app_key")
+    protected String appKey;
+    
+    /**
+     * Principal of the authenticated user.
+     */
+    protected IPrincipal principal;
+
+    /**
+     * Checks if the user has a base function.
      * 
+     * @param baseFunction Base function to check
+     * @return True if the user has the base function
+     */
+    protected boolean hasBaseFunction(BaseFunction baseFunction) throws JSONException {
+        if (principal == null || !(principal instanceof UserPrincipal)) {
+            return false;
+        }
+        Set<String> baseFunctionSet = ((UserPrincipal) principal).getBaseFunctionSet();
+        return baseFunctionSet != null && baseFunctionSet.contains(baseFunction.name());
+    }
+    
+    /**
+     * This method is used to check if the user is authenticated.
+     * 
+     * @return True if the user is authenticated and not anonymous
+     */
+    private boolean authenticate() {
+        Principal principal = (Principal) request.getAttribute(SecurityFilter.PRINCIPAL_ATTRIBUTE);
+        if (principal != null && principal instanceof IPrincipal) {
+            this.principal = (IPrincipal) principal;
+            return !this.principal.isAnonymous();
+        } else {
+            return false;
+        }
+    }
+
+    /**
+     * Performs the user registration with authentication checks.
+     *
      * @param username User's username
-     * @param password Password
-     * @param email E-Mail
-     * @param localeId Locale ID
+     * @param password  Password
+     * @param email     E-Mail
+     * @param localeId  Locale ID
      * @return Response
      */
     @PUT
     @Produces(MediaType.APPLICATION_JSON)
     public Response register(
-        @FormParam("username") String username,
-        @FormParam("password") String password,
-        @FormParam("locale") String localeId,
-        @FormParam("email") String email) throws JSONException {
+            @FormParam("username") String username,
+            @FormParam("password") String password,
+            @FormParam("locale") String localeId,
+            @FormParam("email") String email) throws JSONException {
 
         if (!authenticate()) {
             throw new ForbiddenClientException();
         }
-        checkBaseFunction(BaseFunction.ADMIN);
-        
-        // Validate the input data
-        username = ValidationUtil.validateLength(username, "username", 3, 50);
-        ValidationUtil.validateAlphanumeric(username, "username");
-        password = ValidationUtil.validateLength(password, "password", 8, 50);
-        email = ValidationUtil.validateLength(email, "email", 3, 50);
-        ValidationUtil.validateEmail(email, "email");
-        
-        // Create the user
-        User user = new User();
-        user.setRoleId(Constants.DEFAULT_USER_ROLE);
-        user.setUsername(username);
-        user.setPassword(password);
-        user.setEmail(email);
-        user.setDisplayTitleWeb(false);
-        user.setDisplayTitleMobile(true);
-        user.setDisplayUnreadWeb(true);
-        user.setDisplayUnreadMobile(true);
-        user.setCreateDate(new Date());
+
+        if (!hasBaseFunction(BaseFunction.ADMIN)) {
+            throw new ForbiddenClientException();
+        }
 
         if (localeId == null) {
             // Set the locale from the HTTP headers
             localeId = LocaleUtil.getLocaleIdFromAcceptLanguage(request.getHeader("Accept-Language"));
         }
-        user.setLocaleId(localeId);
-        
-        // Create the user
-        UserDao userDao = new UserDao();
-        String userId;
-        try {
-            userId = userDao.create(user);
-        } catch (Exception e) {
-            if ("AlreadyExistingUsername".equals(e.getMessage())) {
-                throw new ServerException("AlreadyExistingUsername", "Login already used", e);
-            } else {
-                throw new ServerException("UnknownError", "Unknown Server Error", e);
-            }
-        }
-        
-        // Create the root category for this user
-        Category category = new Category();
-        category.setUserId(userId);
-        category.setOrder(0);
-        
-        CategoryDao categoryDao = new CategoryDao();
-        categoryDao.create(category);
-        
-        // Raise a user creation event
-        UserCreatedEvent userCreatedEvent = new UserCreatedEvent();
-        userCreatedEvent.setUser(user);
-        AppContext.getInstance().getMailEventBus().post(userCreatedEvent);
 
-        // Always return OK
-        JSONObject response = new JSONObject();
-        response.put("status", "ok");
-        return Response.ok().entity(response).build();
+        UserRegistrationFactory factory = new SimpleUserRegistrationFactory();
+        Application app = new Application(factory);
+        return app.createUser(username, password, localeId, email);
+    }
+
+    /**
+     * Creates a new user from frontpage
+     *
+     * @param username User's username
+     * @param password  Password
+     * @param email     E-Mail
+     * @param localeId  Locale ID
+     * @return Response
+     */
+    @PUT
+    @Path("register")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response selfRegister(
+            @FormParam("username") String username,
+            @FormParam("password") String password,
+            @FormParam("locale") String localeId,
+            @FormParam("email") String email) throws JSONException {
+
+        if (localeId == null) {
+            // Set the locale from the HTTP headers
+            localeId = LocaleUtil.getLocaleIdFromAcceptLanguage(request.getHeader("Accept-Language"));
+        }
+
+        UserRegistrationFactory factory = new SimpleUserRegistrationFactory();
+        Application app = new Application(factory);
+        return app.createUser(username, password, localeId, email);
     }
 
     /**
@@ -248,7 +283,11 @@ public class UserResource extends BaseResource {
         if (!authenticate()) {
             throw new ForbiddenClientException();
         }
-        checkBaseFunction(BaseFunction.ADMIN);
+        // checkBaseFunction(BaseFunction.ADMIN);
+
+        if (!hasBaseFunction(BaseFunction.ADMIN)) {
+            throw new ForbiddenClientException();
+        }
         
         // Validate the input data
         password = ValidationUtil.validateLength(password, "password", 8, 50, true);
@@ -292,7 +331,11 @@ public class UserResource extends BaseResource {
         user = userDao.update(user);
         
         if (StringUtils.isNotBlank(password)) {
-            checkBaseFunction(BaseFunction.PASSWORD);
+            // checkBaseFunction(BaseFunction.PASSWORD);
+
+            if (!hasBaseFunction(BaseFunction.PASSWORD)) {
+                throw new ForbiddenClientException();
+            }
             
             // Change the password
             user.setPassword(password);
@@ -359,10 +402,16 @@ public class UserResource extends BaseResource {
 
         // Get the user
         UserDao userDao = new UserDao();
+        // System.out.println("===========================================");
+        // System.out.println(userDao);
+        // System.out.println("===========================================");
         String userId = userDao.authenticate(username, password);
         if (userId == null) {
             throw new ForbiddenClientException();
         }
+        // System.out.println("===========================================");
+        // System.out.println("Successfully Authenticated");
+        // System.out.println("===========================================");
             
         // Create a new session token
         AuthenticationTokenDao authenticationTokenDao = new AuthenticationTokenDao();
@@ -467,7 +516,11 @@ public class UserResource extends BaseResource {
         if (!authenticate()) {
             throw new ForbiddenClientException();
         }
-        checkBaseFunction(BaseFunction.ADMIN);
+        // checkBaseFunction(BaseFunction.ADMIN);
+
+        if (!hasBaseFunction(BaseFunction.ADMIN)) {
+            throw new ForbiddenClientException();
+        }
         
         // Check if the user exists
         UserDao userDao = new UserDao();
@@ -591,7 +644,11 @@ public class UserResource extends BaseResource {
         if (!authenticate()) {
             throw new ForbiddenClientException();
         }
-        checkBaseFunction(BaseFunction.ADMIN);
+        // checkBaseFunction(BaseFunction.ADMIN);
+
+        if (!hasBaseFunction(BaseFunction.ADMIN)) {
+            throw new ForbiddenClientException();
+        }
         
         JSONObject response = new JSONObject();
         
@@ -629,7 +686,11 @@ public class UserResource extends BaseResource {
         if (!authenticate()) {
             throw new ForbiddenClientException();
         }
-        checkBaseFunction(BaseFunction.ADMIN);
+        // checkBaseFunction(BaseFunction.ADMIN);
+
+        if (!hasBaseFunction(BaseFunction.ADMIN)) {
+            throw new ForbiddenClientException();
+        }
         
         JSONObject response = new JSONObject();
         List<JSONObject> users = new ArrayList<JSONObject>();

@@ -46,7 +46,8 @@ r.main.initModules = function() {
   r.wizard.init();
   r.theme.init();
   r.shortcuts.init();
-  
+  r.ArticleCompare.init(); // Moved here
+
   // First page
   if (r.user.hasBaseFunction('ADMIN') && r.user.userInfo.first_connection) {
     window.location.hash = '#/wizard/';
@@ -65,4 +66,11 @@ r.main.reset = function() {
   r.settings.reset();
   r.about.reset();
   r.wizard.reset();
-};
+  $('#summary-container').hide();  // Hide the new container
+  $('#reportbug-container').hide();  // Hide the new container
+  $('#managebugs-container').hide(); // Hide the new container
+  $('#viewbugs-container').hide();   // Hide the new container
+  $('#customfeed-container').hide();   // Hide the new container
+  $('#viewcustomfeeds-container').hide();   // Hide the new container
+  $('#trending-articles-container').hide();   // Hide the new container
+  };

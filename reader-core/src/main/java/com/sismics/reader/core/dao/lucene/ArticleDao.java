@@ -129,7 +129,7 @@ public class ArticleDao {
         groupingSearch.setAllGroups(true);
         
         // Searching
-        IndexSearcher searcher = new IndexSearcher(AppContext.getInstance().getIndexingService().getDirectoryReader());
+        IndexSearcher searcher = new IndexSearcher(AppContext.getInstance().getDirectoryIndexingService().getDirectoryReader());
         TopGroups<BytesRef> topGroups = groupingSearch.search(searcher, query, paginatedList.getOffset(), paginatedList.getLimit());
         int total = topGroups.totalGroupCount == null ? 0 : topGroups.totalGroupCount;
         paginatedList.setResultCount(total);

@@ -9,6 +9,8 @@ import com.sismics.reader.core.listener.sync.DeadEventListener;
 import com.sismics.reader.core.model.jpa.Config;
 import com.sismics.reader.core.service.FeedService;
 import com.sismics.reader.core.service.IndexingService;
+import com.sismics.reader.core.service.DirectoryIndexingService;
+import com.sismics.reader.core.service.ArticleIndexingService;
 import com.sismics.util.EnvironmentUtil;
 
 import java.util.ArrayList;
@@ -17,6 +19,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+
+import com.sismics.reader.core.customfeeds.CustomFeedCreateCommander;
 
 /**
  * Global application context.
@@ -60,6 +64,16 @@ public class AppContext {
     private IndexingService indexingService;
 
     /**
+     * Article Indexing service.
+     */
+    private ArticleIndexingService articleIndexingService;
+
+    /**
+     * Directory Indexing service.
+     */
+    private DirectoryIndexingService directoryIndexingService;
+
+    /**
      * Asynchronous executors.
      */
     private List<ExecutorService> asyncExecutorList;
@@ -77,6 +91,10 @@ public class AppContext {
         Config luceneStorageConfig = configDao.getById(ConfigType.LUCENE_DIRECTORY_STORAGE);
         indexingService = new IndexingService(luceneStorageConfig != null ? luceneStorageConfig.getValue() : null);
         indexingService.startAndWait();
+        articleIndexingService = new ArticleIndexingService(luceneStorageConfig != null ? luceneStorageConfig.getValue() : null);
+        articleIndexingService.startAndWait();
+        directoryIndexingService = new DirectoryIndexingService(luceneStorageConfig != null ? luceneStorageConfig.getValue() : null);
+        directoryIndexingService.startAndWait();
     }
     
     /**
@@ -205,5 +223,23 @@ public class AppContext {
      */
     public IndexingService getIndexingService() {
         return indexingService;
+    }
+
+    /**
+     * Getter of articleIndexingService.
+     *
+     * @return articleIndexingService
+     */
+    public ArticleIndexingService getArticleIndexingService() {
+        return articleIndexingService;
+    }
+
+    /**
+     * Getter of directoryIndexingService.
+     *
+     * @return directoryIndexingService
+     */
+    public DirectoryIndexingService getDirectoryIndexingService() {
+        return directoryIndexingService;
     }
 }

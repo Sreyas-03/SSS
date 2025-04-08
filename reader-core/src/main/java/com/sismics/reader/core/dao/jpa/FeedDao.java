@@ -107,6 +107,24 @@ public class FeedDao extends BaseDao<FeedDto, FeedCriteria> {
     }
 
     /**
+     * Get an active feed by its URL.
+     * 
+     * @param feedId RSS URL
+     */
+    public Feed getByFeedId(String feedId) {
+        EntityManager em = ThreadLocalContext.get().getEntityManager();
+        
+        // Get the feed
+        Query q = em.createQuery("select f from Feed f where f.feedId = :feedId and f.deleteDate is null")
+                .setParameter("feedId", feedId);
+        try {
+            return (Feed) q.getSingleResult();
+        } catch (NoResultException e) {
+            return null;
+        }
+    }
+
+    /**
      * Updates a feed.
      * 
      * @param feed Feed to update

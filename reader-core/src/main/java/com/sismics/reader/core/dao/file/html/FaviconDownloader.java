@@ -5,7 +5,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.io.ByteStreams;
 import com.google.common.io.Files;
 import com.sismics.reader.core.util.http.ReaderHttpClient;
-import com.sismics.util.mime.MimeTypeUtil;
+import com.sismics.util.mime.MimeType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -136,7 +136,7 @@ public class FaviconDownloader {
                         localFile = File.createTempFile("reader_favicon", ".ico");
                         if (ByteStreams.copy(is, new FileOutputStream(localFile)) > 0) {
                             // Check if it is a graphics file, we cannot rely on HTTP headers for Content-Type
-                            String type = MimeTypeUtil.guessMimeType(localFile);
+                            String type = MimeType.guessMimeType(localFile);
                             if (type != null) {
                                 String extension = FAVICON_MIME_TYPE_MAP.get(type);
                                 if (extension != null) {

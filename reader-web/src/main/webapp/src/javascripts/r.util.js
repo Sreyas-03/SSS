@@ -8,6 +8,7 @@ r.util.url = {
   user_logout: '../api/user/logout',
   user_list: '../api/user/list',
   user_register: '../api/user',
+  user_selfregister: '../api/user/register',
   user_username_info: '../api/user/{username}',
   user_username_update: '../api/user/{username}',
   user_username_delete: '../api/user/{username}',
