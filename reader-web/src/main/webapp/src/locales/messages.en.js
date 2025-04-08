@@ -52,6 +52,7 @@
   },
   "category": {
     "nonesting": "Nested categories are not allowed",
+    "maxnesting": "More than 5 Nested categories are not allowed",
     "empty": "No category",
     "add": {
       "placeholder": "Name",

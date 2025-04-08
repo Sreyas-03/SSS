@@ -23,11 +23,11 @@ import com.sismics.reader.core.event.ArticleCreatedAsyncEvent;
 import com.sismics.reader.core.event.SubscriptionImportedEvent;
 import com.sismics.reader.core.model.context.AppContext;
 import com.sismics.reader.core.model.jpa.*;
+import com.sismics.reader.core.service.ArticleFeedService;
 import com.sismics.reader.core.service.FeedService;
 import com.sismics.reader.core.util.EntityManagerUtil;
 import com.sismics.reader.core.util.TransactionUtil;
 import com.sismics.util.mime.MimeType;
-import com.sismics.util.mime.MimeTypeUtil;
 import org.apache.commons.compress.archivers.ArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream;
 import org.apache.commons.lang.StringUtils;
@@ -100,7 +100,7 @@ public class SubscriptionImportAsyncListener {
         Closer closer = Closer.create();
         try {
             // Guess the file type
-            String mimeType = MimeTypeUtil.guessMimeType(importFile);
+            String mimeType = MimeType.guessMimeType(importFile);
             if (MimeType.APPLICATION_ZIP.equals(mimeType)) {
                 // Assume the file is a Google Takeout ZIP archive
                 ZipArchiveInputStream archiveInputStream = null;
@@ -207,7 +207,7 @@ public class SubscriptionImportAsyncListener {
         final JobEventDao jobEventDao = new JobEventDao();
         try {
             // Guess the file type
-            String mimeType = MimeTypeUtil.guessMimeType(importFile);
+            String mimeType = MimeType.guessMimeType(importFile);
             if (MimeType.APPLICATION_ZIP.equals(mimeType)) {
                 // Assume the file is a Google Takeout ZIP archive
                 ZipArchiveInputStream archiveInputStream = null;
@@ -379,6 +379,7 @@ public class SubscriptionImportAsyncListener {
                 // Synchronize feed and articles
                 Feed feed = null;
                 final FeedService feedService = AppContext.getInstance().getFeedService();
+                ArticleFeedService articleFeedService = new ArticleFeedService();
                 try {
                     feed = feedService.synchronize(feedUrl);
                 } catch (Exception e) {
@@ -405,7 +406,7 @@ public class SubscriptionImportAsyncListener {
 
                     // Create the initial article subscriptions for this user
                     EntityManagerUtil.flush();
-                    feedService.createInitialUserArticle(user.getId(), feedSubscription);
+                    articleFeedService.createInitialUserArticle(user.getId(), feedSubscription);
 
                     JobEvent jobEvent = new JobEvent(job.getId(), Constants.JOB_EVENT_FEED_IMPORT_SUCCESS, feedUrl);
                     jobEventDao.create(jobEvent);

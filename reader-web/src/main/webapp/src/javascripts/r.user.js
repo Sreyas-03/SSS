@@ -30,6 +30,95 @@ r.user.init = function() {
     // Prevent form submission
     return false;
   });
+
+  $('#register-submit-button').click(function() {
+    var form = $('#register-form');
+    var usernameInput = form.find('#register-username-input');
+    var emailInput = form.find('#register-email-input');
+    var passwordInput = form.find('#register-password-input');
+    var password2Input = form.find('#register-password2-input');
+
+    
+    var username = usernameInput.val().trim();
+    var email = emailInput.val().trim();
+    var password = passwordInput.val();
+    var password2 = password2Input.val();
+    
+    // Client-side validation
+    if (username.length < 3) {
+        alert('Username must be at least 3 characters long.');
+        return;
+    }
+
+    // Client-side validation
+    if (password.length < 8) {
+        alert('Password must be at least 8 characters long.');
+        return;
+    }
+
+    if (password !== password2) {
+        alert('Passwords do not match.');
+        return;
+    }
+    
+    // Form validation
+    form.validate({
+      rules: {
+        username: {
+          required: true,
+          minlength: 3,
+          maxlength: 50
+        },
+        email: {
+          required: true,
+          email: true,
+          minlength: 3,
+          maxlength: 50
+        },
+        password: {
+          required: true,
+          minlength: 8,
+          maxlength: 50
+        },
+        password2: { equalTo: '#' + form.attr('id') + ' #register-password-input' }
+      }
+    });
+    
+    if (form.valid()) {
+      // Calling API
+      r.util.ajax({
+        url: r.util.url.user_selfregister,
+        type: 'PUT',
+        data: {
+          username: username,
+          email: email,
+          password: password
+        },
+        done: function(data) {
+          $().toastmessage('showSuccessToast', $.t('User Registration Successful'));
+        },
+        fail: function(xhr) {
+          try {
+            var errorData = JSON.parse(xhr.responseText); // Parse the response JSON
+
+            if (errorData && errorData.type) { // Check if 'type' exists
+              if (errorData.type === "AlreadyExistingUsername") {
+                alert($.t('This Username has already been taken. Please use another one.')); // Alert for taken username
+              } else if (errorData.type === "AlreadyExistingEmail") {
+                alert($.t('This Email has already been taken. Please use another one.')); // Alert for taken email
+              } else {
+                alert($.t('Registration Error') + ": " + errorData.message); // Generic error + message
+              }
+            } else {
+              alert($.t('Unknown Registration Error')); // Default fallback error
+            }
+          } catch (e) {
+            alert($.t('Unknown Registration Error')); // If JSON parsing fails
+          }
+        }
+      });
+    }
+  });
 };
 
 /**
@@ -72,6 +161,13 @@ r.user.boot = function() {
         // Poll jobs if necessary
         r.user.pollJobs(data);
       }
+      console.log("Current user info:", data);
+      if(data.username !== "anonymous" & data.username !== "admin") {
+        console.log("Current user is not anonymous");
+        r.ArticleCompare.init();
+      }
+
+      // r.ArticleCompare.init();
     }
   });
 };

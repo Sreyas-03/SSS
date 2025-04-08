@@ -12,20 +12,30 @@ import com.sismics.reader.core.model.jpa.FeedSubscription;
 import com.sismics.reader.core.util.jpa.PaginatedList;
 import com.sismics.reader.core.util.jpa.PaginatedLists;
 import com.sismics.reader.rest.assembler.ArticleAssembler;
+import com.sismics.reader.rest.constant.BaseFunction;
 import com.sismics.rest.exception.ClientException;
 import com.sismics.rest.exception.ForbiddenClientException;
 import com.sismics.rest.util.ValidationUtil;
+import com.sismics.security.IPrincipal;
+import com.sismics.security.UserPrincipal;
+import com.sismics.util.filter.SecurityFilter;
+
 import org.codehaus.jettison.json.JSONException;
 import org.codehaus.jettison.json.JSONObject;
 
 import javax.persistence.NoResultException;
+import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.*;
+import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
+
+import java.security.Principal;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Category REST resources.
@@ -33,7 +43,53 @@ import java.util.List;
  * @author jtremeaux
  */
 @Path("/category")
-public class CategoryResource extends BaseResource {
+public class CategoryResource {
+    /**
+     * Injects the HTTP request.
+     */
+    @Context
+    protected HttpServletRequest request;
+    
+    /**
+     * Application key.
+     */
+    @QueryParam("app_key")
+    protected String appKey;
+    
+    /**
+     * Principal of the authenticated user.
+     */
+    protected IPrincipal principal;
+
+    /**
+     * Checks if the user has a base function.
+     * 
+     * @param baseFunction Base function to check
+     * @return True if the user has the base function
+     */
+    protected boolean hasBaseFunction(BaseFunction baseFunction) throws JSONException {
+        if (principal == null || !(principal instanceof UserPrincipal)) {
+            return false;
+        }
+        Set<String> baseFunctionSet = ((UserPrincipal) principal).getBaseFunctionSet();
+        return baseFunctionSet != null && baseFunctionSet.contains(baseFunction.name());
+    }
+    
+    /**
+     * This method is used to check if the user is authenticated.
+     * 
+     * @return True if the user is authenticated and not anonymous
+     */
+    private boolean authenticate() {
+        Principal principal = (Principal) request.getAttribute(SecurityFilter.PRINCIPAL_ATTRIBUTE);
+        if (principal != null && principal instanceof IPrincipal) {
+            this.principal = (IPrincipal) principal;
+            return !this.principal.isAnonymous();
+        } else {
+            return false;
+        }
+    }
+    
     /**
      * Returns all categories.
      * 
@@ -51,7 +107,7 @@ public class CategoryResource extends BaseResource {
         Category rootCategory = categoryDao.getRootCategory(principal.getId());
         
         // Get the subcategories
-        List<Category> categoryList = categoryDao.findSubCategory(rootCategory.getId(), principal.getId());
+        List<Category> categoryList = categoryDao.findAllCategory(principal.getId());
         
         // Build the response
         List<JSONObject> rootCategories = new ArrayList<JSONObject>();
@@ -271,8 +327,9 @@ public class CategoryResource extends BaseResource {
      * 
      * @param id Category ID
      * @param name Category name
-     * @param order Display order of this category
-     * @param folded True if this category is folded in the subscriptions tree.
+     * @param parentId Parent category ID
+     * @param order Display order
+     * @param folded True if the category is folded
      * @return Response
      */
     @POST
@@ -281,6 +338,7 @@ public class CategoryResource extends BaseResource {
     public Response update(
             @PathParam("id") String id,
             @FormParam("name") String name,
+            @FormParam("parent_id") String parentId,
             @FormParam("order") Integer order,
             @FormParam("folded") Boolean folded) throws JSONException {
         if (!authenticate()) {
@@ -306,6 +364,41 @@ public class CategoryResource extends BaseResource {
         if (folded != null) {
             category.setFolded(folded);
         }
+
+        // Handle parent category update
+        if (parentId != null) {
+            if (!parentId.equals(category.getParentId())) {
+                Category parentCategory = categoryDao.getCategory(parentId, principal.getId());
+                if (parentCategory == null) {
+                    throw new ClientException("ParentCategoryNotFound", "Parent category not found");
+                }
+
+                String currentParentId = parentId;
+                while (currentParentId != null) {
+                    if (currentParentId.equals(category.getId())) {
+                        throw new ClientException("CircularReference", "A category cannot be its own ancestor");
+                    }
+                    Category currentParent = categoryDao.getCategory(currentParentId, principal.getId());
+                    if (currentParent == null) break;
+                    currentParentId = currentParent.getParentId();
+                }
+
+                int nestingLevel = 0;
+                currentParentId = parentId;
+                while (currentParentId != null) {
+                    nestingLevel++;
+                    if (nestingLevel > 5) {
+                        throw new ClientException("CategoryTooDeep", "Categories cannot be nested more than 5 levels deep");
+                    }
+                    Category currentParent = categoryDao.getCategory(currentParentId, principal.getId());
+                    if (currentParent == null) break;
+                    currentParentId = currentParent.getParentId();
+                }
+
+                category.setParentId(parentId);
+            }
+        }
+
         categoryDao.update(category);
         
         // Reorder categories

@@ -6,6 +6,7 @@ import com.sismics.util.EnvironmentUtil;
 import org.codehaus.jettison.json.JSONException;
 import org.codehaus.jettison.json.JSONObject;
 
+import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
@@ -20,7 +21,11 @@ import java.util.List;
  * @author jtremeaux
  */
 @Path("/theme")
-public class ThemeResource extends BaseResource {
+public class ThemeResource {
+    /**
+     * Injects the HTTP request.
+     */
+    private HttpServletRequest request;
     /**
      * Returns the list of all themes.
      * 

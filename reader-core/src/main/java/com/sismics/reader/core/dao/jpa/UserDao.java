@@ -77,6 +77,12 @@ public class UserDao extends BaseDao<UserDto, UserCriteria> {
         if (l.size() > 0) {
             throw new Exception("AlreadyExistingUsername");
         }
+        Query q2 = em.createQuery("select u from User u where u.email = :email and u.deleteDate is null")
+                .setParameter("email", user.getEmail());
+        List<?> l2 = q2.getResultList();
+        if (l2.size() > 0) {
+            throw new Exception("AlreadyExistingEmail");
+        }
         
         user.setCreateDate(new Date());
         user.setPassword(hashPassword(user.getPassword()));

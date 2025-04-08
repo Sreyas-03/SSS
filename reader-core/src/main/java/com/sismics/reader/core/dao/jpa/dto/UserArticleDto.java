@@ -1,5 +1,7 @@
 package com.sismics.reader.core.dao.jpa.dto;
 
+import org.codehaus.jettison.json.JSONException;
+import org.codehaus.jettison.json.JSONObject;
 
 /**
  * User article DTO.
@@ -419,5 +421,31 @@ public class UserArticleDto {
      */
     public void setArticlePublicationTimestamp(Long articlePublicationTimestamp) {
         this.articlePublicationTimestamp = articlePublicationTimestamp;
+    }
+
+    public JSONObject getArticleDtoAsJson() throws JSONException {
+        JSONObject userArticleJson = new JSONObject();
+        userArticleJson.put("id", id);
+        JSONObject subscription = new JSONObject();
+        subscription.put("id", feedSubscriptionId);
+        subscription.put("title", feedSubscriptionTitle != null ? feedSubscriptionTitle : feedTitle);
+        userArticleJson.put("subscription", subscription);
+        userArticleJson.put("title", articleTitle);
+        userArticleJson.put("url", articleUrl);
+        userArticleJson.put("date", articlePublicationTimestamp);
+        userArticleJson.put("creator", articleCreator);
+        userArticleJson.put("description", articleDescription);
+        userArticleJson.put("comment_url", articleCommentUrl);
+        userArticleJson.put("comment_count", articleCommentCount);
+        if (articleEnclosureUrl != null) {
+            JSONObject enclosure = new JSONObject();
+            enclosure.put("url", articleEnclosureUrl);
+            enclosure.put("length", articleEnclosureLength);
+            enclosure.put("type", articleEnclosureType);
+            userArticleJson.put("enclosure", enclosure);
+        }
+        userArticleJson.put("is_read", readTimestamp != null);
+        userArticleJson.put("is_starred", starTimestamp != null);
+        return userArticleJson;
     }
 }

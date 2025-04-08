@@ -107,60 +107,60 @@ public class IndexingService extends AbstractScheduledService {
         return Scheduler.newFixedDelaySchedule(0, 1, TimeUnit.HOURS);
     }
     
-    /**
-     * Search articles.
-     * 
-     * @param userId User ID
-     * @param searchQuery The query
-     * @param offset Offset
-     * @param limit Limit
-     * @return List of articles
-     */
-    public PaginatedList<UserArticleDto> searchArticles(String userId, String searchQuery, Integer offset, Integer limit) throws Exception {
-        // Search articles
-        ArticleDao articleDao = new ArticleDao();
-        PaginatedList<UserArticleDto> paginatedList = PaginatedLists.create(limit, offset);
-        Map<String, Article> articleMap = null;
-        articleMap = articleDao.search(paginatedList, searchQuery);
+    // /**
+    //  * Search articles.
+    //  * 
+    //  * @param userId User ID
+    //  * @param searchQuery The query
+    //  * @param offset Offset
+    //  * @param limit Limit
+    //  * @return List of articles
+    //  */
+    // public PaginatedList<UserArticleDto> searchArticles(String userId, String searchQuery, Integer offset, Integer limit) throws Exception {
+    //     // Search articles
+    //     ArticleDao articleDao = new ArticleDao();
+    //     PaginatedList<UserArticleDto> paginatedList = PaginatedLists.create(limit, offset);
+    //     Map<String, Article> articleMap = null;
+    //     articleMap = articleDao.search(paginatedList, searchQuery);
         
-        if (articleMap.size() > 0) {
-            // Get linked UserArticle from database
-            UserArticleCriteria userArticleCriteria = new UserArticleCriteria()
-                    .setUserId(userId)
-                    .setVisible(false)
-                    .setArticleIdIn(Lists.newArrayList(articleMap.keySet()));
+    //     if (articleMap.size() > 0) {
+    //         // Get linked UserArticle from database
+    //         UserArticleCriteria userArticleCriteria = new UserArticleCriteria()
+    //                 .setUserId(userId)
+    //                 .setVisible(false)
+    //                 .setArticleIdIn(Lists.newArrayList(articleMap.keySet()));
             
-            UserArticleDao userArticleDao = new UserArticleDao();
-            PaginatedList<UserArticleDto> userArticledList = PaginatedLists.create(paginatedList.getLimit(), 0);
-            userArticleDao.findByCriteria(userArticledList, userArticleCriteria, null, null);
-            paginatedList.setResultList(userArticledList.getResultList());
+    //         UserArticleDao userArticleDao = new UserArticleDao();
+    //         PaginatedList<UserArticleDto> userArticledList = PaginatedLists.create(paginatedList.getLimit(), 0);
+    //         userArticleDao.findByCriteria(userArticledList, userArticleCriteria, null, null);
+    //         paginatedList.setResultList(userArticledList.getResultList());
             
-            for (UserArticleDto userArticleDto : paginatedList.getResultList()) {
-                Article article = articleMap.get(userArticleDto.getArticleId());
-                if (article.getTitle() != null) {
-                    userArticleDto.setArticleTitle(article.getTitle());
-                }
-                if (article.getDescription() != null) {
-                    userArticleDto.setArticleDescription(article.getDescription());
-                }
+    //         for (UserArticleDto userArticleDto : paginatedList.getResultList()) {
+    //             Article article = articleMap.get(userArticleDto.getArticleId());
+    //             if (article.getTitle() != null) {
+    //                 userArticleDto.setArticleTitle(article.getTitle());
+    //             }
+    //             if (article.getDescription() != null) {
+    //                 userArticleDto.setArticleDescription(article.getDescription());
+    //             }
                 
-                // Create UserArticle if it does not exists
-                if (userArticleDto.getId() == null) {
-                    UserArticle userArticle = new UserArticle();
-                    userArticle.setArticleId(userArticleDto.getArticleId());
-                    userArticle.setUserId(userId);
-                    userArticle.setReadDate(new Date());
-                    String userArticleId = userArticleDao.create(userArticle);
-                    userArticleDto.setId(userArticleId);
-                    userArticleDto.setReadTimestamp(userArticle.getReadDate().getTime());
-                }
-            }
-        } else {
-            paginatedList.setResultList(new ArrayList<UserArticleDto>());
-        }
+    //             // Create UserArticle if it does not exists
+    //             if (userArticleDto.getId() == null) {
+    //                 UserArticle userArticle = new UserArticle();
+    //                 userArticle.setArticleId(userArticleDto.getArticleId());
+    //                 userArticle.setUserId(userId);
+    //                 userArticle.setReadDate(new Date());
+    //                 String userArticleId = userArticleDao.create(userArticle);
+    //                 userArticleDto.setId(userArticleId);
+    //                 userArticleDto.setReadTimestamp(userArticle.getReadDate().getTime());
+    //             }
+    //         }
+    //     } else {
+    //         paginatedList.setResultList(new ArrayList<UserArticleDto>());
+    //     }
         
-        return paginatedList;
-    }
+    //     return paginatedList;
+    // }
     
     /**
      * Destroy and rebuild Lucene index.
@@ -171,44 +171,44 @@ public class IndexingService extends AbstractScheduledService {
         AppContext.getInstance().getAsyncEventBus().post(rebuildIndexAsyncEvent);
     }
 
-    /**
-     * Getter of directory.
-     *
-     * @return the directory
-     */
-    public Directory getDirectory() {
-        return directory;
-    }
+    // /**
+    //  * Getter of directory.
+    //  *
+    //  * @return the directory
+    //  */
+    // public Directory getDirectory() {
+    //     return directory;
+    // }
     
-    /**
-     * Returns a valid directory reader.
-     * Take care of reopening the reader if the index has changed
-     * and closing the previous one.
-     *
-     * @return the directoryReader
-     */
-    public DirectoryReader getDirectoryReader() {
-        if (directoryReader == null) {
-            if (!DirectoryReader.indexExists(directory)) {
-                log.info("Lucene directory not yet created");
-                return null;
-            }
-            try {
-                directoryReader = DirectoryReader.open(directory);
-            } catch (IOException e) {
-                log.error("Error creating the directory reader", e);
-            }
-        } else {
-            try {
-                DirectoryReader newReader = DirectoryReader.openIfChanged(directoryReader);
-                if (newReader != null) {
-                    directoryReader.close();
-                    directoryReader = newReader;
-                }
-            } catch (IOException e) {
-                log.error("Error while reopening the directory reader", e);
-            }
-        }
-        return directoryReader;
-    }
+    // /**
+    //  * Returns a valid directory reader.
+    //  * Take care of reopening the reader if the index has changed
+    //  * and closing the previous one.
+    //  *
+    //  * @return the directoryReader
+    //  */
+    // public DirectoryReader getDirectoryReader() {
+    //     if (directoryReader == null) {
+    //         if (!DirectoryReader.indexExists(directory)) {
+    //             log.info("Lucene directory not yet created");
+    //             return null;
+    //         }
+    //         try {
+    //             directoryReader = DirectoryReader.open(directory);
+    //         } catch (IOException e) {
+    //             log.error("Error creating the directory reader", e);
+    //         }
+    //     } else {
+    //         try {
+    //             DirectoryReader newReader = DirectoryReader.openIfChanged(directoryReader);
+    //             if (newReader != null) {
+    //                 directoryReader.close();
+    //                 directoryReader = newReader;
+    //             }
+    //         } catch (IOException e) {
+    //             log.error("Error while reopening the directory reader", e);
+    //         }
+    //     }
+    //     return directoryReader;
+    // }
 }

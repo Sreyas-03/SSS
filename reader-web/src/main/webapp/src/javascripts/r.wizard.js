@@ -28,6 +28,44 @@ r.wizard.init = function() {
     // Go to first page
     r.wizard.changePage(0);
   });
+
+  r.wizard.initFrontpage();
+};
+
+/**
+ * Initializes frontpage functionality.
+ */
+r.wizard.initFrontpage = function() {
+    // Display Frontpage if necessary
+    r.wizard.reset();
+    $('#frontpage-container').show();
+    r.wizard.changeFrontpage('login');
+
+    $(document).ready(function() {
+        console.log("Document is ready, attaching form submit handler.");
+        
+        $('#register-form').submit(function(e) {
+            console.log("Register form submit event triggered");
+            e.preventDefault(); // Stop form from refreshing
+
+            r.wizard.onFrontRegisterSubmit();
+        });
+    });
+
+    $('#login-form').submit(function(e) {
+        e.preventDefault();
+        var username = $('.login-username-input').val();
+        var password = $('.login-password-input').val();
+        var remember = $('.login-remember-input').is(':checked');
+        r.user.login(username, password, remember);
+    });
+};
+
+r.wizard.changeFrontpage = function(page) {
+    $('.frontpage-container').hide();
+    $('#' + page + '-container').show();
+    $('#frontpage-container > ul li').removeClass('active');
+    $('#frontpage-container > ul li[data-frontpage-container="#' + page + '-container"]').addClass('active');
 };
 
 /**
