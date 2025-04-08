@@ -1,9 +1,3 @@
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/51CAWZT5)
-Sismics Rudra's Subscription Service (RSS) - Reader: Project 1
-==============
-
-**Do not modify this README. Use the docs directory for anything you might want to submit**
-
 What is RSS-Reader?
 ---------------
 
@@ -138,4 +132,3 @@ gradlew build
 The generated APK will be in `app/build/apk/app-release.apk`
 
 ---
-**Note**: Mr. Rudra Dhar is not associated with the development of this project (code or SE project 1). Any code smell, design smell, bug or fault is through no fault of Mr. Rudra Dhar.
